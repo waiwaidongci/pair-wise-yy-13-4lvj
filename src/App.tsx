@@ -1,126 +1,107 @@
+import { useState } from "react";
 import "./styles.css";
+import { useLabStore } from "./store";
+import { OrderList } from "./components/OrderList";
+import { OrderDetail } from "./components/OrderDetail";
+import { NewOrderForm } from "./components/NewOrderForm";
+import { ReworkList } from "./components/ReworkList";
 
-const project = {
-  "sourceNo": 7,
-  "id": "hxyfront-62012",
-  "port": 62012,
-  "title": "纺织染整小样管理",
-  "domain": "纺织染整",
-  "prompt": "我需要一个纺织染整实验室的小样管理前端系统，可以记录面料成分、克重、染料配方、浴比、温度曲线、保温时间、后整理方式、色差值和评审结果。页面需要有小样批次列表、配方比例展示、Lab色差对比、工艺曲线摘要和按客户订单筛选。",
-  "palette": [
-    "#be123c",
-    "#4f46e5",
-    "#16a34a"
-  ],
-  "metrics": [
-    "小样批次",
-    "色差超限",
-    "客户订单",
-    "通过率"
-  ],
-  "filters": [
-    "棉",
-    "涤纶",
-    "锦纶",
-    "混纺"
-  ],
-  "fields": [
-    "面料成分",
-    "克重",
-    "染料配方",
-    "浴比",
-    "保温时间",
-    "色差值"
-  ],
-  "records": [
-    [
-      "LAB-620A",
-      "棉府绸120g",
-      "ΔE 0.84",
-      "评审通过"
-    ],
-    [
-      "LAB-621C",
-      "涤纶针织",
-      "升温曲线偏快",
-      "待复染"
-    ],
-    [
-      "LAB-624B",
-      "混纺斜纹",
-      "后整理柔软剂2%",
-      "客户确认中"
-    ]
-  ]
-};
+type Tab = "orders" | "new" | "reworks";
+
+const FLOW_STEPS = ["新建打样单", "配料称量", "打样", "质控录入", "待确认", "负责人确认", "领取 / 退库", "退库→待重打"];
 
 function App() {
+  const store = useLabStore();
+  const [tab, setTab] = useState<Tab>("orders");
+  const [selectedId, setSelectedId] = useState<string | null>(null);
+
+  const selected = store.orders.find((o) => o.id === selectedId) ?? null;
+  const pendingReworks = store.reworks.filter((r) => r.status === "pending").length;
+
+  const metrics = [
+    { label: "打样单总数", value: store.orders.length },
+    { label: "待确认", value: store.orders.filter((o) => o.status === "pending_confirm").length },
+    { label: "待重打", value: pendingReworks },
+    {
+      label: "称量偏差留痕",
+      value: store.orders.reduce((n, o) => n + o.deviations.length, 0),
+    },
+  ];
+
+  const gotoOrder = (id: string) => {
+    setSelectedId(id);
+    setTab("orders");
+  };
+
   return (
     <main className="app">
-      <section className="hero">
-        <p>{project.id} · 源提示词{project.sourceNo} · Port {project.port}</p>
-        <h1>{project.title}</h1>
-        <span>{project.prompt}</span>
-      </section>
+      <header className="topbar">
+        <div className="brand">
+          <p>染整实验台 · 小样全流程追踪</p>
+          <h1>打样与样品交接管理</h1>
+          <span className="sub">
+            打样单 → 称量（±0.01g 留痕）→ 质控 Lab/保温 → 待确认 → 负责人放行 → 领取/退库 → 待重打，全程关联原单。
+          </span>
+        </div>
+        <button
+          className="btn btn-ghost"
+          onClick={() => {
+            if (window.confirm("将清空本地数据并恢复演示数据，确定？")) store.actions.reset();
+          }}
+        >
+          重置演示数据
+        </button>
+      </header>
+
+      <div className="flow">
+        {FLOW_STEPS.map((s, i) => (
+          <span key={s} className="flow-step">
+            {s}
+            {i < FLOW_STEPS.length - 1 && <i>→</i>}
+          </span>
+        ))}
+      </div>
 
       <section className="metrics">
-        {project.metrics.map((metric: string, index: number) => (
-          <article key={metric}>
-            <small>{metric}</small>
-            <strong>{[28, 6, 14, 91][index] ?? 10}</strong>
+        {metrics.map((m) => (
+          <article key={m.label}>
+            <small>{m.label}</small>
+            <strong>{m.value}</strong>
           </article>
         ))}
       </section>
 
-      <section className="workspace">
-        <aside className="panel">
-          <h2>{project.domain}分类</h2>
-          <div className="chips">
-            {project.filters.map((item: string) => (
-              <button key={item}>{item}</button>
-            ))}
-          </div>
-        </aside>
+      <nav className="tabs">
+        <button className={tab === "orders" ? "active" : ""} onClick={() => setTab("orders")}>
+          打样单列表
+        </button>
+        <button className={tab === "new" ? "active" : ""} onClick={() => setTab("new")}>
+          新建打样单
+        </button>
+        <button className={tab === "reworks" ? "active" : ""} onClick={() => setTab("reworks")}>
+          待重打{pendingReworks > 0 ? `（${pendingReworks}）` : ""}
+        </button>
+      </nav>
 
-        <section className="panel form-panel">
-          <div className="heading">
-            <div>
-              <p>专业字段</p>
-              <h2>新增记录</h2>
+      {tab === "orders" && (
+        <div className="layout">
+          <OrderList orders={store.orders} selectedId={selectedId} onSelect={setSelectedId} />
+          {selected ? (
+            <OrderDetail key={selected.id} order={selected} actions={store.actions} />
+          ) : (
+            <div className="card placeholder">
+              <h3>未选择打样单</h3>
+              <p className="muted">点击左侧任意一单，查看称量、质控、确认与交接的完整链路。</p>
             </div>
-            <button className="primary">保存记录</button>
-          </div>
-          <div className="field-grid">
-            {project.fields.map((field: string) => (
-              <label key={field}>
-                <span>{field}</span>
-                <input placeholder={"填写" + field} />
-              </label>
-            ))}
-          </div>
-        </section>
-      </section>
+          )}
+        </div>
+      )}
 
-      <section className="panel">
-        <div className="heading">
-          <div>
-            <p>近期记录</p>
-            <h2>工作台摘要</h2>
-          </div>
-          <button>导出CSV</button>
-        </div>
-        <div className="records">
-          {project.records.map((record: string[], index: number) => (
-            <article key={record.join("-")}>
-              <b>{String(index + 1).padStart(2, "0")}</b>
-              <div>
-                <h3>{record[0]}</h3>
-                <p>{record.slice(1).join(" · ")}</p>
-              </div>
-            </article>
-          ))}
-        </div>
-      </section>
+      {tab === "new" && <NewOrderForm actions={store.actions} onCreated={gotoOrder} />}
+
+      {tab === "reworks" && (
+        <ReworkList reworks={store.reworks} actions={store.actions} onCreated={gotoOrder} />
+      )}
     </main>
   );
 }
